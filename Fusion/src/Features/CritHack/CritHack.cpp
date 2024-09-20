@@ -1,3 +1,5 @@
+// TODO: make a seperate crit thing just for Damage Desync and Crit Damage because it doesnt save on melee for some weird fuck
+
 #include "CritHack.h"
 
 #define WEAPON_RANDOM_RANGE				10000
@@ -159,27 +161,46 @@ void CCritHack::CanFireCritical(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
 	CritBanned = false;
 	DamageTilUnban = 0;
+	trackdmg = 0;
 
 	if (pWeapon->m_iSlot() == SLOT_MELEE)
+	{
 		CritChance = TF_DAMAGE_CRIT_CHANCE_MELEE * pLocal->GetCritMult();
+	}
 	else if (pWeapon->IsStreamingWeapon())
 	{
 		CritChance = TF_DAMAGE_CRIT_CHANCE_RAPID * pLocal->GetCritMult();
 		float flNonCritDuration = (TF_DAMAGE_CRIT_DURATION_RAPID / CritChance) - TF_DAMAGE_CRIT_DURATION_RAPID;
-		CritChance = 1.f / flNonCritDuration;
+		if (flNonCritDuration > 0)
+		{
+			CritChance = 1.f / flNonCritDuration;
+		}
+		else
+		{
+			CritChance = 0; // or handle the error appropriately
+		}
 	}
 	else
+	{
 		CritChance = TF_DAMAGE_CRIT_CHANCE * pLocal->GetCritMult();
+	}
+
 	CritChance = SDK::AttribHookValue(CritChance, "mult_crit_chance", pWeapon) + 0.1f;
 
 	if (!AllDamage || !CritDamage || pWeapon->m_iSlot() == SLOT_MELEE)
 		return;
 
-	const float flNormalizedDamage = (float)CritDamage / TF_DAMAGE_CRIT_MULTIPLIER;
+	const float flNormalizedDamage = static_cast<float>(CritDamage) / TF_DAMAGE_CRIT_MULTIPLIER;
 	const float flObservedCritChance = flNormalizedDamage / (flNormalizedDamage + AllDamage - CritDamage);
-	if (CritBanned = flObservedCritChance > CritChance)
+	if (CritBanned = (flObservedCritChance > CritChance))
+	{
 		DamageTilUnban = flNormalizedDamage / CritChance + CritDamage - flNormalizedDamage - AllDamage;
+	}
+
+	trackdmg = (CritDamage > 0); 
 }
+
+
 
 bool CCritHack::WeaponCanCrit(CTFWeaponBase* pWeapon)
 {
@@ -515,13 +536,29 @@ void CCritHack::Draw(CTFPlayer* pLocal)
 				H::Draw.String(fFont, x, y, { 255, 150, 150, 255 }, align, std::format("Deal {} damage", DamageTilUnban).c_str());
 
 			H::Draw.String(fFont, x, y + fFont.m_nTall + 1, Vars::Menu::Theme::Active.Value, align, std::format("{} / {} potential crits", std::max(Storage[iSlot].AvailableCrits, 0), Storage[iSlot].PotentialCrits).c_str());
+
+			H::Draw.String(fFont, x, y + fFont.m_nTall + 14,
+				{ 150, 255, 150, 255 },
+				align,
+				std::format("Crit Damage: {}", CritDamage).c_str()); // optionally you can make this render just +{} but it looks better tbh this way
+
+			// maybe add pWeapon->m_flCritTokenBucket? i already did it just looks weird so.. maybe if i make it look better?
+
+
+			H::Draw.String(fFont, x, y + fFont.m_nTall + 26,
+				{ 255, 150, 150, 255 },
+				align,
+				std::format("Damage Desync: {}", AllDamage).c_str());
+			
 		}
 		else
 			H::Draw.String(fFont, x, y, Vars::Menu::Theme::Active.Value, align, "Calculating");
 
+		
+
 		if (Vars::Debug::Info.Value)
 		{
-			H::Draw.String(fFont, x, y + fFont.m_nTall * 3, { 255, 255, 255, 255 }, align, std::format("AllDamage: {}, CritDamage: {}", AllDamage, CritDamage).c_str());
+			//H::Draw.String(fFont, x, y + fFont.m_nTall * 3, { 255, 255, 255, 255 }, align, std::format("AllDamage: {}, CritDamage: {}", AllDamage, CritDamage).c_str());
 			H::Draw.String(fFont, x, y + fFont.m_nTall * 4, { 255, 255, 255, 255 }, align, std::format("Bucket: {}", pWeapon->m_flCritTokenBucket()).c_str());
 			H::Draw.String(fFont, x, y + fFont.m_nTall * 5, { 255, 255, 255, 255 }, align, std::format("Damage: {}, Cost: {}", Storage[iSlot].Damage, Storage[iSlot].Cost).c_str());
 			H::Draw.String(fFont, x, y + fFont.m_nTall * 6, { 255, 255, 255, 255 }, align, std::format("Shots: {}, Crits: {}", pWeapon->m_nCritChecks(), pWeapon->m_nCritSeedRequests()).c_str());
